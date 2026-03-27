@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dual Camera - Front + Back</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', sans-serif;
+            background: #000;
+            color: white;
+            overflow: hidden;
+        }
+        
+        .container {
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .camera-container {
+            flex: 1;
+            display: flex;
+            background: #111;
+        }
+        
+        .camera-view {
+            width: 50%;
+            height: 100%;
+            position: relative;
+        }
+        
+        #frontVideo, #backVideo {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        
+        .camera-label {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(0,0,0,0.7);
+            padding: 5px 10px;
+            border-radius: 15px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        
+        .controls {
+            padding: 15px;
+            background: linear-gradient(180deg, rgba(0,0,0,0.9), rgba(0,0,0,0.3));
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+        
+        .btn {
+            padding: 15px 25px;
+            border: none;
+            border-radius: 50px;
+            font-size: 16px;
+            font-weight: bold;
+            min-width: 120px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .photo-btn { background: #4CAF50; color: white; }
+        .video-btn { background: #FF5722; color: white; }
+        .switch-btn { background: #2196F3; color: white; }
+        
+        .btn:active { transform: scale(0.95); }
+        .btn.recording { background: #f44336 !important; animation: pulse 1s infinite; }
+        
+        @keyframes pulse {
+            0% { box-shadow: 0 0 0 0 rgba(244,67,54,0.7); }
+            70% { box-shadow: 0 0 0 20px rgba(244,67,54,0); }
+            100% { box-shadow: 0 0 0 0 rgba(244,67,54,0); }
+        }
+        
+        .status {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: rgba(0,255,0,0.8);
+            padding: 5px 10px;
+            border-radius: 20px;
+            font-size: 12px;
+        }
+        
+        @media (max-width: 480px) {
+            .camera-view { width: 50%; }
+            .btn { padding: 12px 20px; font-size: 14px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="camera-container">
+            <!-- Front Camera (Left) -->
+            <div class="camera-view">
+                <video id="frontVideo" autoplay muted playsinline></video>
+                <div class="camera-label">🤳 Front Camera</div>
+            </div>
+            
+            <!-- Back Camera (Right) -->
+            <div class="camera-view">
+                <video id="backVideo" autoplay muted playsinline></video>
+                <div class="camera-label">📷 Back Camera</div>
+            </div>
+        </div>
+        
+        <div class="status" id="status">Ready</div>
+        
+        <div class="controls">
+            <button class="btn photo-btn" id="photoBtn">📸 PHOTO</button>
+            <button class="btn video-btn" id="videoBtn">🎥 VIDEO</button>
+            <button class="btn switch-btn" id="switchBtn">🔄 Switch</button>
+        </div>
+    </div>
+
+    <script>
+        class DualCamera {
+            constructor() {
+                this.frontStream = null;
+                this.backStream = null;
+                this.videoRecorder = null;
+                this.isRecording = false;
+                this.init();
+            }
+            
+            async init() {
+                try {
+                    await this.startFrontCamera();
+                    await this.startBackCamera();
+                    this.setupEventListeners();
+                    document.getElementById('status').textContent = '✅ Live';
+                } catch (error) {
+                    alert('Camera permission deny kar diya! Allow karein.');
+                    console.error('Camera error:', error);
+                }
+            }
+            
+            async startFrontCamera() {
+                const frontVideo = document.getElementById('frontVideo');
+                const constraints = {
+                    video: {
+                        facingMode: 'user',
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 }
+                    }
+                };
+                this.frontStream = await navigator.mediaDevices.getUserMedia(constraints);
+                frontVideo.srcObject = this.frontStream;
+            }
+            
+            async startBackCamera() {
+                const backVideo = document.getElementById('backVideo');
+                const constraints = {
+                    video: {
+                        facingMode: { exact: 'environment' },
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 }
+                    }
+                };
+                this.backStream = await navigator.mediaDevices.getUserMedia(constraints);
+                backVideo.srcObject = this.backStream;
+            }
+            
+            setupEventListeners() {
+                document.getElementById('photoBtn').onclick = () => this.capturePhoto();
+                document.getElementById('videoBtn').onclick = () => this.toggleRecording();
+                document.getElementById('switchBtn').onclick = () => this.switchCameras();
+            }
+            
+            async capturePhoto() {
+                const frontCanvas = this.captureCanvas('frontVideo');
+                const backCanvas = this.captureCanvas('backVideo');
+                
+                // Download both photos
+                this.downloadCanvas(frontCanvas, `front_${Date.now()}.png`);
+                this.downloadCanvas(backCanvas, `back_${Date.now()}.png`);
+                
+                document.getElementById('status').textContent = '📸 Photos Saved!';
+                setTimeout(() => document.getElementById('status').textContent = '✅ Live', 2000);
+            }
+            
+            captureCanvas(videoId) {
+                const video = document.getElementById(videoId);
+                const canvas = document.createElement('canvas');
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+                canvas.getContext('2d').drawImage(video, 0, 0);
+                return canvas;
+            }
+            
+            downloadCanvas(canvas, filename) {
+                const link = document.createElement('a');
+                link.download = filename;
+                link.href = canvas.toDataURL();
+                link.click();
+            }
+            
+            async toggleRecording() {
+                const btn = document.getElementById('videoBtn');
+                
+                if (!this.isRecording) {
+                    await this.startRecording();
+                    btn.textContent = '⏹️ STOP';
+                    btn.classList.add('recording');
+                    this.isRecording = true;
+                } else {
+                    await this.stopRecording();
+                    btn.textContent = '🎥 VIDEO';
+                    btn.classList.remove('recording');
+                    this.isRecording = false;
+                }
+            }
+            
+            async startRecording() {
+                const frontCanvas = document.createElement('canvas');
+                const backCanvas = document.createElement('canvas');
+                const stream = new CanvasCaptureMediaStreamCanvas(15, frontCanvas, backCanvas);
+                
+                this.videoRecorder = new MediaRecorder(stream);
+                const chunks = [];
+                
+                this.videoRecorder.ondataavailable = e => chunks.push(e.data);
+                this.videoRecorder.onstop = () => {
+                    const blob = new Blob(chunks, { type: 'video/webm' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `dual_video_${Date.now()}.webm`;
+                    a.click();
+                };
+                
+                this.videoRecorder.start();
+            }
+            
+            async stopRecording() {
+                if (this.videoRecorder) {
+                    this.videoRecorder.stop();
+                }
+            }
+            
+            async switchCameras() {
+                // Simple restart for demo
+                location.reload();
+            }
+        }
+        
+        // Initialize when page loads
+        window.addEventListener('load', () => {
+            new DualCamera();
+        });
+        
+        // Prevent zoom on iOS
+        document.addEventListener('touchstart', function(event) {
+            if (event.touches.length > 1) {
+                event.preventDefault();
+            }
+        });
+    </script>
+</body>
+</html>
